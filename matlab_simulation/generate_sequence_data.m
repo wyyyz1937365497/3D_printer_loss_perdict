@@ -132,22 +132,44 @@ fprintf('数据已保存至 %s\n', csv_filename);
 
 % 输出一些统计信息
 fprintf('位移向量统计:\n');
-fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', mean(displacement_sequences(:,:,:,1), 'all'), std(displacement_sequences(:,:,:,1), [], 'all'));
-fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', mean(displacement_sequences(:,:,:,2), 'all'), std(displacement_sequences(:,:,:,2), [], 'all'));
+% 先计算X方向的统计
+x_displacements = displacement_sequences(:, :, 1);
+y_displacements = displacement_sequences(:, :, 2);
 
-% 输出尖锐转角和圆角的统计信息
+fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', mean(x_displacements, 'all'), std(x_displacements, [], 'all'));
+fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', mean(y_displacements, 'all'), std(y_displacements, [], 'all'));
+
+% 计算尖锐转角和圆角的统计信息
 sharp_corner_mask = squeeze(sequences(:, :, 2)) <= 5;
-fprintf('尖锐转角样本数: %d (%.2f%%)\n', sum(sharp_corner_mask(:)), sum(sharp_corner_mask(:))/numel(sharp_corner_mask)*100);
-fprintf('圆角样本数: %d (%.2f%%)\n', sum(~sharp_corner_mask(:)), sum(~sharp_corner_mask(:))/numel(sharp_corner_mask)*100);
+total_points = num_sequences * sequence_length;
+fprintf('尖锐转角样本数: %d (%.2f%%)\n', sum(sharp_corner_mask(:)), sum(sharp_corner_mask(:))/total_points*100);
+fprintf('圆角样本数: %d (%.2f%%)\n', sum(~sharp_corner_mask(:)), sum(~sharp_corner_mask(:))/total_points*100);
 
-fprintf('尖锐转角位移向量统计:\n');
-fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
-    mean(displacement_sequences(sharp_corner_mask, 1)), std(displacement_sequences(sharp_corner_mask, 1)));
-fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
-    mean(displacement_sequences(sharp_corner_mask, 2)), std(displacement_sequences(sharp_corner_mask, 2)));
+% 重塑数组以进行统计分析
+sequences_reshaped = reshape(sequences, num_sequences * sequence_length, 4);
+displacements_reshaped = reshape(displacement_sequences, num_sequences * sequence_length, 2);
+sharp_corner_mask_reshaped = reshape(sharp_corner_mask, num_sequences * sequence_length, 1);
 
-fprintf('圆角位移向量统计:\n');
-fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
-    mean(displacement_sequences(~sharp_corner_mask, 1)), std(displacement_sequences(~sharp_corner_mask, 1)));
-fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
-    mean(displacement_sequences(~sharp_corner_mask, 2)), std(displacement_sequences(~sharp_corner_mask, 2)));
+% 计算尖锐转角统计
+sharp_corner_indices = find(sharp_corner_mask_reshaped);
+if ~isempty(sharp_corner_indices)
+    fprintf('尖锐转角位移向量统计:\n');
+    fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
+        mean(displacements_reshaped(sharp_corner_indices, 1)), std(displacements_reshaped(sharp_corner_indices, 1)));
+    fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
+        mean(displacements_reshaped(sharp_corner_indices, 2)), std(displacements_reshaped(sharp_corner_indices, 2)));
+else
+    fprintf('尖锐转角位移向量统计: 无尖锐转角样本\n');
+end
+
+% 计算圆角统计
+round_corner_indices = find(~sharp_corner_mask_reshaped);
+if ~isempty(round_corner_indices)
+    fprintf('圆角位移向量统计:\n');
+    fprintf('X方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
+        mean(displacements_reshaped(round_corner_indices, 1)), std(displacements_reshaped(round_corner_indices, 1)));
+    fprintf('Y方向偏差: 平均值=%.4f, 标准差=%.4f\n', ...
+        mean(displacements_reshaped(round_corner_indices, 2)), std(displacements_reshaped(round_corner_indices, 2)));
+else
+    fprintf('圆角位移向量统计: 无圆角样本\n');
+end
