@@ -9,42 +9,106 @@ from train_model import DisplacementPredictor
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False  # 解决保存图像时负号'-'显示为方块的问题
 
-def generate_ideal_path():
+def generate_detailed_ideal_path():
     """
-    生成理想打印路径，包括直线段和转角段
+    生成详细的理想打印路径，包含更密集的路径点，特别是转角处
     """
-    # 创建一个包含直线和转角的路径
+    path_points = []
+    
+    # 生成一个更复杂的路径，包含密集的路径点
     # 路径：从原点出发，画一个矩形，然后画一个星形
-    path_segments = []
     
-    # 矩形路径
-    rect_points = [
-        (0, 0), (20, 0), (20, 20), (0, 20), (0, 0)  # 矩形
-    ]
+    # 矩形路径（更密集的点）
+    rect_side_length = 20
+    # 底边
+    for i in np.linspace(0, rect_side_length, 20):
+        path_points.append((i, 0))
+    # 右边
+    for i in np.linspace(0, rect_side_length, 20):
+        path_points.append((rect_side_length, i))
+    # 顶边
+    for i in np.linspace(rect_side_length, 0, 20):
+        path_points.append((i, rect_side_length))
+    # 左边
+    for i in np.linspace(rect_side_length, 0, 20):
+        path_points.append((0, i))
     
-    # 星形路径（简化版）
+    # 生成星形路径
     star_center = (30, 10)
-    star_radius = 8
-    star_points = []
-    for i in range(5):
-        angle = i * 2 * np.pi / 5
+    outer_radius = 8
+    inner_radius = 4
+    num_points = 5
+    
+    # 计算星形的点
+    for i in range(num_points):
         # 外部点
-        x_outer = star_center[0] + star_radius * np.cos(angle)
-        y_outer = star_center[1] + star_radius * np.sin(angle)
-        star_points.append((x_outer, y_outer))
+        angle = i * 2 * np.pi / num_points - np.pi/2  # 从顶部开始
+        x = star_center[0] + outer_radius * np.cos(angle)
+        y = star_center[1] + outer_radius * np.sin(angle)
+        path_points.append((x, y))
         
         # 内部点
-        angle_inner = angle + np.pi / 5
-        x_inner = star_center[0] + star_radius * 0.5 * np.cos(angle_inner)
-        y_inner = star_center[1] + star_radius * 0.5 * np.sin(angle_inner)
-        star_points.append((x_inner, y_inner))
+        inner_angle = (i + 0.5) * 2 * np.pi / num_points - np.pi/2
+        x = star_center[0] + inner_radius * np.cos(inner_angle)
+        y = star_center[1] + inner_radius * np.sin(inner_angle)
+        path_points.append((x, y))
     
     # 将星形闭合
-    star_points.append(star_points[0])
+    path_points.append(path_points[80])  # 闭合星形，星形开始于索引80
     
-    ideal_path = rect_points + star_points
+    return path_points
+
+def calculate_curvature_at_point(path, idx):
+    """
+    计算路径上某点的曲率，用于判断是否为转角
+    """
+    if idx == 0 or idx == len(path) - 1:
+        # 端点使用相邻点计算
+        if idx == 0:
+            p1, p2 = path[0], path[1]
+            # 使用前两个点的方向作为参考
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            # 曲率近似为0
+            return 0.0, np.arctan2(dy, dx)
+        else:  # idx == len(path) - 1
+            p1, p2 = path[-2], path[-1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            return 0.0, np.arctan2(dy, dx)
     
-    return ideal_path
+    # 使用三点法计算曲率
+    prev_pt = path[idx - 1]
+    curr_pt = path[idx]
+    next_pt = path[idx + 1]
+    
+    # 计算两条线段的向量
+    vec1 = (curr_pt[0] - prev_pt[0], curr_pt[1] - prev_pt[1])
+    vec2 = (next_pt[0] - curr_pt[0], next_pt[1] - curr_pt[1])
+    
+    # 计算线段长度
+    len1 = np.sqrt(vec1[0]**2 + vec1[1]**2)
+    len2 = np.sqrt(vec2[0]**2 + vec2[1]**2)
+    
+    # 避免除以零
+    if len1 < 1e-6 or len2 < 1e-6:
+        return 0.0, 0.0
+    
+    # 计算单位向量
+    unit_vec1 = (vec1[0] / len1, vec1[1] / len1)
+    unit_vec2 = (vec2[0] / len2, vec2[1] / len2)
+    
+    # 计算角度变化
+    angle_change = np.arccos(np.clip(unit_vec1[0] * unit_vec2[0] + unit_vec1[1] * unit_vec2[1], -1.0, 1.0))
+    
+    # 计算曲率（角度变化除以路径长度的一半）
+    avg_len = (len1 + len2) / 2
+    curvature = angle_change / avg_len if avg_len > 1e-6 else 0.0
+    
+    # 计算切线方向（平均方向）
+    tangent_angle = np.arctan2((unit_vec1[1] + unit_vec2[1])/2, (unit_vec1[0] + unit_vec2[0])/2)
+    
+    return curvature, tangent_angle
 
 def simulate_physical_errors_with_matlab_logic(ideal_path, velocities):
     """
@@ -58,28 +122,14 @@ def simulate_physical_errors_with_matlab_logic(ideal_path, velocities):
         else:
             v = velocities[-1]  # 如果速度不够，使用最后一个速度
             
-        # 计算转角半径（简化计算，但保持与MATLAB相似的逻辑）
-        if i > 0 and i < len(ideal_path) - 1:
-            prev_x, prev_y = ideal_path[i-1]
-            next_x, next_y = ideal_path[i+1]
-            
-            # 使用三点法估算曲率半径
-            a = np.sqrt((x - prev_x)**2 + (y - prev_y)**2)
-            b = np.sqrt((next_x - x)**2 + (next_y - y)**2)
-            c = np.sqrt((next_x - prev_x)**2 + (next_y - prev_y)**2)
-            
-            # 使用海伦公式计算三角形面积
-            s = (a + b + c) / 2
-            area = np.sqrt(s * (s-a) * (s-b) * (s-c))
-            
-            # 计算外接圆半径（近似曲率半径）
-            if area > 0:
-                radius = (a * b * c) / (4 * area)
-            else:
-                radius = float('inf')  # 直线段
+        # 计算当前点的曲率
+        curvature, tangent_angle = calculate_curvature_at_point(ideal_path, i)
+        
+        # 将曲率转换为半径（避免除以零）
+        if curvature > 1e-6:
+            radius = 1.0 / curvature
         else:
-            # 起始点和终点设为大半径（近似直线）
-            radius = 1000.0
+            radius = 1000.0  # 直线段
         
         # 确保半径在合理范围内（与MATLAB相同）
         if radius < 0.5:
@@ -89,14 +139,16 @@ def simulate_physical_errors_with_matlab_logic(ideal_path, velocities):
         
         # 固定参数（与MATLAB相同）
         nozzle_weight = 10  # 喷头重量
-        k = 0.5 + np.random.random() * 1.5  # 支撑梁刚度系数，随机生成
+        # 使用固定的刚度值或根据路径点位置生成确定性刚度值
+        k = 0.5 + (x + y) % 1.5  # 基于位置生成确定性刚度值
         
         # 模拟MATLAB中的物理逻辑
         # 对于尖锐转角和圆角使用不同的角度处理
         if radius <= 5:  # 尖锐转角
             angle = np.pi/2  # 90度转角
         else:  # 圆角
-            angle = np.pi/4  # 圆角角度
+            # 使用切线方向作为参考角度
+            angle = tangent_angle if abs(tangent_angle) > 1e-6 else np.pi/4
         
         # 计算实际偏差（基于物理模型的简化模拟，与MATLAB相同）
         # 偏差与速度平方、喷头重量成正比，与支撑梁刚度成反比
@@ -125,10 +177,10 @@ def simulate_physical_errors_with_matlab_logic(ideal_path, velocities):
     
     return noisy_path
 
-def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, scaler_y):
+def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, scaler_y, corner_threshold=0.1):
     """
     应用训练好的模型对有误差的路径进行修正
-    使用理想路径的坐标作为输入特征，预测偏差后从有误差的位置减去该偏差
+    只对曲率超过阈值的转角点进行修正
     """
     corrected_path = []
     
@@ -138,28 +190,14 @@ def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, 
         else:
             v = velocities[-1]  # 如果速度不够，使用最后一个速度
             
-        # 使用理想路径的坐标来计算转角半径（保持与MATLAB仿真一致）
-        if i > 0 and i < len(ideal_path) - 1:
-            prev_x, prev_y = ideal_path[i-1]
-            next_x, next_y = ideal_path[i+1]
-            
-            # 使用三点法估算曲率半径
-            a = np.sqrt((ideal_pt[0] - prev_x)**2 + (ideal_pt[1] - prev_y)**2)
-            b = np.sqrt((next_x - ideal_pt[0])**2 + (next_y - ideal_pt[1])**2)
-            c = np.sqrt((next_x - prev_x)**2 + (next_y - prev_y)**2)
-            
-            # 使用海伦公式计算三角形面积
-            s = (a + b + c) / 2
-            area = np.sqrt(s * (s-a) * (s-b) * (s-c))
-            
-            # 计算外接圆半径（近似曲率半径）
-            if area > 0:
-                radius = (a * b * c) / (4 * area)
-            else:
-                radius = float('inf')  # 直线段
+        # 计算当前点的曲率
+        curvature, tangent_angle = calculate_curvature_at_point(ideal_path, i)
+        
+        # 将曲率转换为半径
+        if curvature > 1e-6:
+            radius = 1.0 / curvature
         else:
-            # 起始点和终点设为大半径（近似直线）
-            radius = 1000.0
+            radius = 1000.0  # 直线段
         
         # 确保半径在合理范围内
         if radius < 1:
@@ -169,10 +207,11 @@ def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, 
         
         # 固定参数
         weight = 10  # 喷头重量
-        stiffness = 0.5 + np.random.random() * 1.5  # 支撑梁刚度系数，随机生成
+        # 使用与模拟时相同的确定性刚度值生成方法
+        x_ideal, y_ideal = ideal_pt
+        stiffness = 0.5 + (x_ideal + y_ideal) % 1.5  # 基于位置生成确定性刚度值
         
         # 准备输入数据 - 使用理想位置（因为模型训练时是用理想位置作为输入的）
-        x_ideal, y_ideal = ideal_pt
         input_data = np.array([[v, radius, weight, stiffness, x_ideal, y_ideal]])
         
         # 标准化输入
@@ -193,8 +232,16 @@ def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, 
         # 因此，要从实际位置（有误差的位置）减去这个偏差，来接近理想位置
         # corrected = actual - (actual - ideal) = ideal
         x_noisy, y_noisy = noisy_pt
-        corrected_x = x_noisy - prediction[0][0]  # 从有误差的位置减去预测的偏差
-        corrected_y = y_noisy - prediction[0][1]
+        
+        # 只对转角点进行修正（曲率大于阈值）
+        if curvature > corner_threshold:
+            # 根据经验教训中的"模型预测偏差方向的应用与验证原则"，确认校正方向
+            corrected_x = x_noisy - prediction[0][0]  # 从有误差的位置减去预测的偏差
+            corrected_y = y_noisy - prediction[0][1]
+        else:
+            # 非转角点保持不变
+            corrected_x = x_noisy
+            corrected_y = y_noisy
         
         corrected_path.append((corrected_x, corrected_y))
     
@@ -213,12 +260,15 @@ def calculate_errors(ideal_path, actual_path):
 def main():
     print("开始可视化3D打印质量改进效果...")
     
-    # 生成理想路径
-    ideal_path = generate_ideal_path()
+    # 生成详细的理想路径
+    ideal_path = generate_detailed_ideal_path()
     print(f"生成了 {len(ideal_path)} 个路径点")
     
     # 定义速度（模拟不同段的不同速度）
-    velocities = [50] * 5 + [80] * 10 + [60] * 5 + [100] * 11  # 匹配路径点数量
+    velocities = [50 if i < 80 else 80 if i < 160 else 60 if i < 200 else 100 for i in range(len(ideal_path))]
+    
+    # 设置随机种子以确保结果可重现
+    np.random.seed(42)
     
     # 模拟物理误差（使用与MATLAB相同的逻辑）
     noisy_path = simulate_physical_errors_with_matlab_logic(ideal_path, velocities)
@@ -241,7 +291,7 @@ def main():
     scaler_X = joblib.load(scaler_x_path)
     scaler_y = joblib.load(scaler_y_path)
     
-    # 应用模型校正（对有误差的路径进行校正）
+    # 应用模型校正（对有误差的路径进行校正，仅对转角点）
     corrected_path = apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, scaler_y)
     
     # 计算误差
@@ -255,11 +305,18 @@ def main():
     improvement = ((np.mean(noisy_errors) - np.mean(corrected_errors)) / np.mean(noisy_errors) * 100)
     print(f"误差减少: {improvement:.2f}%")
     
+    # 计算曲率用于可视化
+    curvatures = []
+    for i in range(len(ideal_path)):
+        curvature, _ = calculate_curvature_at_point(ideal_path, i)
+        curvatures.append(curvature)
+    curvatures = np.array(curvatures)
+    
     # 创建可视化图表
-    plt.figure(figsize=(18, 6))
+    plt.figure(figsize=(20, 5))
     
     # 子图1: 路径对比
-    plt.subplot(1, 3, 1)
+    plt.subplot(1, 4, 1)
     ideal_x, ideal_y = zip(*ideal_path)
     noisy_x, noisy_y = zip(*noisy_path)
     corrected_x, corrected_y = zip(*corrected_path)
@@ -281,7 +338,7 @@ def main():
     plt.axis('equal')
     
     # 子图2: 误差对比
-    plt.subplot(1, 3, 2)
+    plt.subplot(1, 4, 2)
     plt.plot(noisy_errors, 'r-', linewidth=2, label='有误差路径误差', alpha=0.8)
     plt.plot(corrected_errors, 'b-', linewidth=2, label='校正后路径误差', alpha=0.8)
     plt.title('路径点误差对比')
@@ -291,12 +348,21 @@ def main():
     plt.grid(True, alpha=0.3)
     
     # 子图3: 误差分布直方图
-    plt.subplot(1, 3, 3)
+    plt.subplot(1, 4, 3)
     plt.hist(noisy_errors, bins=30, alpha=0.6, label='有误差路径', color='red', density=True)
     plt.hist(corrected_errors, bins=30, alpha=0.6, label='校正后路径', color='blue', density=True)
     plt.title('误差分布对比')
     plt.xlabel('误差 (mm)')
     plt.ylabel('概率密度')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # 子图4: 曲率分布
+    plt.subplot(1, 4, 4)
+    plt.plot(curvatures, 'g-', linewidth=1, label='路径曲率', alpha=0.8)
+    plt.title('路径曲率分布')
+    plt.xlabel('路径点索引')
+    plt.ylabel('曲率')
     plt.legend()
     plt.grid(True, alpha=0.3)
     
@@ -317,6 +383,14 @@ def main():
     print(f"误差标准差 - 校正后路径: {np.std(corrected_errors):.4f}")
     std_improvement = ((np.std(noisy_errors) - np.std(corrected_errors)) / np.std(noisy_errors) * 100)
     print(f"误差标准差减少: {std_improvement:.2f}%")
+    
+    # 计算转角点的改进
+    corner_indices = np.where(curvatures > 0.1)[0]
+    if len(corner_indices) > 0:
+        corner_noisy_errors = noisy_errors[corner_indices]
+        corner_corrected_errors = corrected_errors[corner_indices]
+        corner_improvement = ((np.mean(corner_noisy_errors) - np.mean(corner_corrected_errors)) / np.mean(corner_noisy_errors) * 100)
+        print(f"转角点平均误差改善: {corner_improvement:.2f}%")
     
     plt.show()
 

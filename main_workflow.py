@@ -4,166 +4,170 @@ import sys
 import argparse
 
 def run_matlab_simulation():
-    """运行MATLAB数据生成脚本"""
-    print("正在运行MATLAB仿真以生成数据...")
+    """运行MATLAB仿真"""
+    print("正在运行MATLAB仿真...")
     
     # 检查MATLAB是否可用
     try:
-        result = subprocess.run(['matlab', '-batch', 'cd matlab_simulation; generate_data; exit'], 
-                               capture_output=True, text=True, timeout=300)
-        if result.returncode == 0:
-            print("MATLAB仿真成功完成")
-            print(result.stdout)
-        else:
-            print("MATLAB仿真出错:")
-            print(result.stderr)
-            return False
+        result = subprocess.run(['matlab', '-batch', 'exit'], capture_output=True, timeout=30)
+        matlab_available = result.returncode == 0
     except FileNotFoundError:
-        print("未找到MATLAB命令行工具，尝试使用matlab-cli（如果已安装）")
-        try:
-            result = subprocess.run(['matlab-cli', '-batch', 'cd matlab_simulation; generate_data; exit'], 
-                                   capture_output=True, text=True, timeout=300)
-            if result.returncode == 0:
-                print("MATLAB仿真成功完成")
-                print(result.stdout)
-            else:
-                print("MATLAB仿真出错:")
-                print(result.stderr)
-                return False
-        except FileNotFoundError:
-            print("未找到MATLAB命令行工具，请确保已安装MATLAB并将其添加到系统路径中")
-            print("跳过MATLAB仿真步骤，假定数据文件已存在")
-            # 检查数据文件是否存在
-            data_file = "data/printer_displacement_data.csv"
-            if not os.path.exists(data_file):
-                print(f"错误: 数据文件 {data_file} 不存在")
-                return False
+        matlab_available = False
     
-    return True
-
-def run_python_data_processing():
-    """运行Python数据处理脚本"""
-    print("正在运行Python数据处理...")
-    
-    # 确保所需的Python包已安装
-    required_packages = ['pandas', 'numpy', 'scikit-learn', 'torch', 'matplotlib']
-    for package in required_packages:
-        try:
-            __import__(package.replace('-', '_'))
-        except ImportError:
-            print(f"正在安装 {package}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-    
-    # 创建数据目录
-    os.makedirs('data', exist_ok=True)
-    
-    # 运行数据处理脚本
-    try:
-        result = subprocess.run([sys.executable, "python_scripts/data_processing.py"], 
-                               capture_output=True, text=True)
-        if result.returncode == 0:
-            print("Python数据处理成功完成")
-            print(result.stdout)
-        else:
-            print("Python数据处理出错:")
-            print(result.stderr)
-            return False
-    except Exception as e:
-        print(f"运行数据处理脚本时出错: {e}")
+    if not matlab_available:
+        print("警告: MATLAB未找到，跳过仿真步骤")
         return False
     
+    # 运行MATLAB生成数据脚本
+    matlab_script_path = os.path.join(os.path.dirname(__file__), 'matlab_simulation', 'generate_data.m')
+    cmd = f'matlab -batch "cd {os.path.dirname(matlab_script_path)}; generate_data; exit"'
+    
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"MATLAB仿真失败: {result.stderr}")
+        return False
+    
+    print("MATLAB仿真成功完成")
     return True
 
+def run_sequence_matlab_simulation():
+    """运行序列数据的MATLAB仿真"""
+    print("正在运行MATLAB序列数据仿真...")
+    
+    # 检查MATLAB是否可用
+    try:
+        result = subprocess.run(['matlab', '-batch', 'exit'], capture_output=True, timeout=30)
+        matlab_available = result.returncode == 0
+    except FileNotFoundError:
+        matlab_available = False
+    
+    if not matlab_available:
+        print("警告: MATLAB未找到，跳过序列仿真步骤")
+        return False
+    
+    # 运行MATLAB生成序列数据脚本
+    matlab_script_path = os.path.join(os.path.dirname(__file__), 'matlab_simulation', 'generate_sequence_data.m')
+    cmd = f'matlab -batch "cd {os.path.dirname(matlab_script_path)}; generate_sequence_data; exit"'
+    
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"MATLAB序列仿真失败: {result.stderr}")
+        return False
+    
+    print("MATLAB序列仿真成功完成")
+    return True
+
+def run_python_processing():
+    """运行Python数据处理"""
+    print("正在运行Python数据处理...")
+    
+    # 导入并运行数据处理脚本
+    try:
+        from python_scripts import data_processing
+        data_processing.process_data()
+        print("Python数据处理成功完成")
+        return True
+    except ImportError as e:
+        print(f"导入数据处理模块失败: {e}")
+        return False
+    except Exception as e:
+        print(f"Python数据处理失败: {e}")
+        return False
+
 def run_python_training():
-    """运行Python模型训练脚本"""
+    """运行Python模型训练"""
     print("正在运行Python模型训练...")
     
     try:
-        result = subprocess.run([sys.executable, "python_scripts/train_model.py"], 
-                               capture_output=True, text=True)
-        if result.returncode == 0:
-            print("Python模型训练成功完成")
-            print(result.stdout)
-        else:
-            print("Python模型训练出错:")
-            print(result.stderr)
-            return False
-    except Exception as e:
-        print(f"运行训练脚本时出错: {e}")
+        from python_scripts import train_model
+        train_model.train_model()
+        print("Python模型训练成功完成")
+        return True
+    except ImportError as e:
+        print(f"导入模型训练模块失败: {e}")
         return False
-    
-    return True
+    except Exception as e:
+        print(f"Python模型训练失败: {e}")
+        return False
 
-def run_model_application():
-    """运行模型应用脚本"""
+def run_sequence_training():
+    """运行序列模型训练"""
+    print("正在运行序列模型训练...")
+    
+    try:
+        from python_scripts import train_sequence_model
+        train_sequence_model.train_sequence_model()
+        print("序列模型训练成功完成")
+        return True
+    except ImportError as e:
+        print(f"导入序列模型训练模块失败: {e}")
+        return False
+    except Exception as e:
+        print(f"序列模型训练失败: {e}")
+        return False
+
+def run_python_apply():
+    """运行Python模型应用"""
     print("正在应用训练好的模型...")
     
     try:
-        result = subprocess.run([sys.executable, "python_scripts/apply_model.py"], 
-                               capture_output=True, text=True)
-        if result.returncode == 0:
-            print("模型应用成功完成")
-            print(result.stdout)
-        else:
-            print("模型应用出错:")
-            print(result.stderr)
-            return False
-    except Exception as e:
-        print(f"运行应用脚本时出错: {e}")
+        from python_scripts import apply_model
+        apply_model.apply_model()
+        print("模型应用成功完成")
+        return True
+    except ImportError as e:
+        print(f"导入模型应用模块失败: {e}")
         return False
-    
-    return True
+    except Exception as e:
+        print(f"Python模型应用失败: {e}")
+        return False
 
 def main():
-    parser = argparse.ArgumentParser(description='3D打印机转角误差补偿系统')
-    parser.add_argument('--skip-matlab', action='store_true', 
-                        help='跳过MATLAB仿真步骤')
-    parser.add_argument('--skip-processing', action='store_true', 
-                        help='跳过数据处理步骤')
-    parser.add_argument('--skip-training', action='store_true', 
-                        help='跳过模型训练步骤')
-    parser.add_argument('--skip-application', action='store_true', 
-                        help='跳过模型应用步骤')
+    parser = argparse.ArgumentParser(description='3D打印机转角误差补偿系统工作流程')
+    parser.add_argument('--skip-matlab', action='store_true', help='跳过MATLAB仿真步骤')
+    parser.add_argument('--skip-sequence', action='store_true', help='跳过序列模型步骤')
     
     args = parser.parse_args()
     
     print("开始执行3D打印机转角误差补偿系统工作流程...")
     
-    success = True
+    steps = []
+    steps.append(('Python数据处理', run_python_processing))
+    steps.append(('Python模型训练', run_python_training))
     
     if not args.skip_matlab:
-        success &= run_matlab_simulation()
-        if not success:
-            print("MATLAB仿真失败，退出流程")
-            return
+        steps.append(('MATLAB仿真', run_matlab_simulation))
     
-    if not args.skip_processing:
-        success &= run_python_data_processing()
-        if not success:
-            print("Python数据处理失败，退出流程")
-            return
+    steps.append(('Python模型应用', run_python_apply))
     
-    if not args.skip_training:
-        success &= run_python_training()
-        if not success:
-            print("Python模型训练失败，退出流程")
-            return
+    if not args.skip_matlab and not args.skip_sequence:
+        steps.append(('MATLAB序列仿真', run_sequence_matlab_simulation))
+        steps.append(('序列模型训练', run_sequence_training))
     
-    if not args.skip_application:
-        success &= run_model_application()
-        if not success:
-            print("模型应用失败，退出流程")
-            return
+    successful_steps = 0
+    total_steps = len(steps)
     
-    if success:
-        print("\n所有步骤成功完成！")
-        print("生成的文件:")
+    for step_name, step_func in steps:
+        print(f"正在执行: {step_name}")
+        if step_func():
+            successful_steps += 1
+        else:
+            print(f"步骤 '{step_name}' 失败")
+    
+    print(f"\n所有步骤执行完成！成功 {successful_steps}/{total_steps}")
+    
+    if successful_steps == total_steps:
+        print("\n生成的文件:")
         print("- data/printer_displacement_data.csv: 仿真生成的数据")
         print("- models/displacement_predictor.pth: 训练好的模型")
+        print("- models/sequence_displacement_predictor.pth: 序列模型")
         print("- models/scaler_X.pkl, models/scaler_y.pkl: 标准化器")
+        print("- models/sequence_scaler_X.pkl, models/sequence_scaler_y.pkl: 序列标准化器")
         print("- models/training_results.png: 训练结果图")
+        print("- models/sequence_training_results.png: 序列训练结果图")
     else:
-        print("\n工作流程执行失败！")
+        print(f"\n有 {total_steps - successful_steps} 个步骤失败，请检查错误信息")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
