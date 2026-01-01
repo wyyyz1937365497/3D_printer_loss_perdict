@@ -46,9 +46,9 @@ def generate_ideal_path():
     
     return ideal_path
 
-def simulate_physical_errors(ideal_path, velocities):
+def simulate_physical_errors_with_matlab_logic(ideal_path, velocities):
     """
-    模拟物理因素导致的打印误差
+    使用与MATLAB相同的逻辑模拟物理因素导致的打印误差
     """
     noisy_path = []
     
@@ -58,7 +58,7 @@ def simulate_physical_errors(ideal_path, velocities):
         else:
             v = velocities[-1]  # 如果速度不够，使用最后一个速度
             
-        # 计算转角半径（简化计算）
+        # 计算转角半径（简化计算，但保持与MATLAB相似的逻辑）
         if i > 0 and i < len(ideal_path) - 1:
             prev_x, prev_y = ideal_path[i-1]
             next_x, next_y = ideal_path[i+1]
@@ -81,61 +81,71 @@ def simulate_physical_errors(ideal_path, velocities):
             # 起始点和终点设为大半径（近似直线）
             radius = 1000.0
         
-        # 确保半径在合理范围内
-        if radius < 1:
-            radius = 1
-        elif radius > 1000:
-            radius = 1000
+        # 确保半径在合理范围内（与MATLAB相同）
+        if radius < 0.5:
+            radius = 0.5
+        elif radius > 50:
+            radius = 50.0
         
-        # 模拟物理误差：速度越快、半径越小（转角越尖锐），误差越大
-        error_factor = (v**2) / (radius * 10)  # 简化的物理模型
+        # 固定参数（与MATLAB相同）
+        nozzle_weight = 10  # 喷头重量
+        k = 0.5 + np.random.random() * 1.5  # 支撑梁刚度系数，随机生成
         
-        # 添加随机误差和系统误差
-        random_error_x = np.random.normal(0, error_factor)
-        random_error_y = np.random.normal(0, error_factor)
+        # 模拟MATLAB中的物理逻辑
+        # 对于尖锐转角和圆角使用不同的角度处理
+        if radius <= 5:  # 尖锐转角
+            angle = np.pi/2  # 90度转角
+        else:  # 圆角
+            angle = np.pi/4  # 圆角角度
         
-        # 系统误差（与转角相关的偏差）
-        if radius < 10:  # 尖锐转角
-            sys_error_x = np.random.normal(0, error_factor * 1.5)  # 尖锐转角误差更大
-            sys_error_y = np.random.normal(0, error_factor * 1.5)
+        # 计算实际偏差（基于物理模型的简化模拟，与MATLAB相同）
+        # 偏差与速度平方、喷头重量成正比，与支撑梁刚度成反比
+        # 尖锐转角通常会有更大的偏差
+        base_deviation = (v**2 * nozzle_weight) / (k * 1000)
+        
+        # 尖锐转角的偏差更大
+        if radius <= 5:
+            deviation_factor = 1.5  # 尖锐转角偏差放大因子
         else:
-            sys_error_x = np.random.normal(0, error_factor)
-            sys_error_y = np.random.normal(0, error_factor)
+            deviation_factor = 1.0  # 圆角偏差正常
         
-        # 总误差
-        total_error_x = random_error_x + sys_error_x
-        total_error_y = random_error_y + sys_error_y
+        deviation_x = base_deviation * deviation_factor * np.cos(angle + np.pi/4)
+        deviation_y = base_deviation * deviation_factor * np.sin(angle + np.pi/4)
         
-        # 应用误差到理想位置
-        noisy_x = x + total_error_x
-        noisy_y = y + total_error_y
+        # 添加随机噪声模拟其他因素（与MATLAB相同）
+        noise_factor = 0.1
+        deviation_x = deviation_x + noise_factor * np.random.randn()
+        deviation_y = deviation_y + noise_factor * np.random.randn()
+        
+        # 应用偏差到理想位置
+        noisy_x = x + deviation_x
+        noisy_y = y + deviation_y
         
         noisy_path.append((noisy_x, noisy_y))
     
     return noisy_path
 
-def apply_model_correction(noisy_path, velocities, model, scaler_X, scaler_y):
+def apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, scaler_y):
     """
     应用训练好的模型对有误差的路径进行修正
-    注意：这里是对noisy_path进行修正，而不是对ideal_path
+    使用理想路径的坐标作为输入特征，预测偏差后从有误差的位置减去该偏差
     """
     corrected_path = []
     
-    for i, (x, y) in enumerate(noisy_path):
+    for i, (ideal_pt, noisy_pt) in enumerate(zip(ideal_path, noisy_path)):
         if i < len(velocities):
             v = velocities[i]
         else:
             v = velocities[-1]  # 如果速度不够，使用最后一个速度
             
-        # 计算转角半径（基于理想路径计算，因为这是实际打印时的路径形状）
-        ideal_path = generate_ideal_path()
+        # 使用理想路径的坐标来计算转角半径（保持与MATLAB仿真一致）
         if i > 0 and i < len(ideal_path) - 1:
             prev_x, prev_y = ideal_path[i-1]
             next_x, next_y = ideal_path[i+1]
             
             # 使用三点法估算曲率半径
-            a = np.sqrt((ideal_path[i][0] - prev_x)**2 + (ideal_path[i][1] - prev_y)**2)
-            b = np.sqrt((next_x - ideal_path[i][0])**2 + (next_y - ideal_path[i][1])**2)
+            a = np.sqrt((ideal_pt[0] - prev_x)**2 + (ideal_pt[1] - prev_y)**2)
+            b = np.sqrt((next_x - ideal_pt[0])**2 + (next_y - ideal_pt[1])**2)
             c = np.sqrt((next_x - prev_x)**2 + (next_y - prev_y)**2)
             
             # 使用海伦公式计算三角形面积
@@ -159,10 +169,11 @@ def apply_model_correction(noisy_path, velocities, model, scaler_X, scaler_y):
         
         # 固定参数
         weight = 10  # 喷头重量
-        stiffness = 1.0  # 支撑梁刚度
+        stiffness = 0.5 + np.random.random() * 1.5  # 支撑梁刚度系数，随机生成
         
-        # 准备输入数据 - 使用有误差的位置作为输入
-        input_data = np.array([[v, radius, weight, stiffness, x, y]])
+        # 准备输入数据 - 使用理想位置（因为模型训练时是用理想位置作为输入的）
+        x_ideal, y_ideal = ideal_pt
+        input_data = np.array([[v, radius, weight, stiffness, x_ideal, y_ideal]])
         
         # 标准化输入
         input_scaled = scaler_X.transform(input_data)
@@ -170,7 +181,7 @@ def apply_model_correction(noisy_path, velocities, model, scaler_X, scaler_y):
         # 转换为PyTorch张量
         input_tensor = torch.FloatTensor(input_scaled)
         
-        # 预测偏差
+        # 预测偏差（理想位置到实际位置的偏差）
         with torch.no_grad():
             prediction_scaled = model(input_tensor)
             prediction_scaled = prediction_scaled.numpy()
@@ -178,9 +189,12 @@ def apply_model_correction(noisy_path, velocities, model, scaler_X, scaler_y):
         # 反标准化预测结果
         prediction = scaler_y.inverse_transform(prediction_scaled)
         
-        # 应用校正（将预测的偏差加到有误差的位置上，以抵消原始偏差）
-        corrected_x = x + prediction[0][0]
-        corrected_y = y + prediction[0][1]
+        # 模型预测的是从理想位置到实际位置的偏差（ideal -> actual）
+        # 因此，要从实际位置（有误差的位置）减去这个偏差，来接近理想位置
+        # corrected = actual - (actual - ideal) = ideal
+        x_noisy, y_noisy = noisy_pt
+        corrected_x = x_noisy - prediction[0][0]  # 从有误差的位置减去预测的偏差
+        corrected_y = y_noisy - prediction[0][1]
         
         corrected_path.append((corrected_x, corrected_y))
     
@@ -206,8 +220,8 @@ def main():
     # 定义速度（模拟不同段的不同速度）
     velocities = [50] * 5 + [80] * 10 + [60] * 5 + [100] * 11  # 匹配路径点数量
     
-    # 模拟物理误差
-    noisy_path = simulate_physical_errors(ideal_path, velocities)
+    # 模拟物理误差（使用与MATLAB相同的逻辑）
+    noisy_path = simulate_physical_errors_with_matlab_logic(ideal_path, velocities)
     
     # 加载训练好的模型和标准化器
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -228,7 +242,7 @@ def main():
     scaler_y = joblib.load(scaler_y_path)
     
     # 应用模型校正（对有误差的路径进行校正）
-    corrected_path = apply_model_correction(noisy_path, velocities, model, scaler_X, scaler_y)
+    corrected_path = apply_model_correction(ideal_path, noisy_path, velocities, model, scaler_X, scaler_y)
     
     # 计算误差
     noisy_errors = calculate_errors(ideal_path, noisy_path)

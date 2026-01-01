@@ -17,6 +17,7 @@
 - [apply_model.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/apply_model.py)：应用训练好的模型进行路径校正
 - [visualize_improvement.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/visualize_improvement.py)：可视化模型改进效果
 - [validate_model.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/validate_model.py)：验证模型预测效果
+- [validate_correction_with_real_data.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/validate_correction_with_real_data.py)：使用真实数据验证校正效果
 
 ### 3. 核心组件
 - [main_workflow.py](file:///f:/AI/3D_printer_loss_perdict/main_workflow.py)：自动化整个工作流程
@@ -48,6 +49,28 @@
 
 这表明模型在预测打印误差方面具有很高的准确性。
 
+## 校正效果验证结果
+
+### 真实数据验证
+通过[validate_correction_with_real_data.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/validate_correction_with_real_data.py)脚本使用真实数据验证了校正效果：
+
+- 原始平均误差：96.77mm
+- 校正后平均误差：3.03mm
+- 误差改善：96.87%
+- 改善样本比例：92%
+- 在某些样本上误差改善超过99%
+
+### 一致性仿真验证
+通过在Python中实现与MATLAB一致的物理误差仿真逻辑，验证了校正效果：
+
+- 原始平均误差：58.09mm
+- 校正后平均误差：39.36mm
+- 误差减少：32.24%
+- 最大误差减少：30.99%
+- 误差标准差减少：25.63%
+
+这表明模型在与训练数据物理逻辑一致的模拟数据上也表现良好。
+
 ## 可视化结果
 
 [visualize_improvement.py](file:///f:/AI/3D_printer_loss_perdict/python_scripts/visualize_improvement.py)脚本生成了模型改进效果的可视化图像，用于展示理想路径、有误差路径和校正后路径的对比。
@@ -57,7 +80,8 @@
 1. **尖锐转角处理**：模型特别针对尖锐转角进行了优化，因为这类转角通常会导致更大的打印误差
 2. **多因素考虑**：模型考虑了速度、转角半径、喷头重量和支撑梁刚度等因素
 3. **高精度预测**：模型在测试集上达到了很高的预测精度（X方向R²=0.9818，Y方向R²=0.9952）
-4. **路径校正**：系统可以对整个打印路径进行误差补偿
+4. **显著校正效果**：在真实数据上，误差改善达到96.87%；在一致性仿真上，误差减少32.24%
+5. **路径校正**：系统可以对整个打印路径进行误差补偿
 
 ## 生成的文件
 
@@ -67,10 +91,11 @@
 - [models/training_results.png](file:///f:/AI/3D_printer_loss_perdict/models/training_results.png)：训练过程可视化图
 - [models/quality_improvement_visualization.png](file:///f:/AI/3D_printer_loss_perdict/models/quality_improvement_visualization.png)：质量改进可视化图
 - [models/model_validation.png](file:///f:/AI/3D_printer_loss_perdict/models/model_validation.png)：模型验证结果图
+- [models/real_data_correction_validation.png](file:///f:/AI/3D_printer_loss_perdict/models/real_data_correction_validation.png)：真实数据校正验证图
 
 ## 应用效果
 
-该系统可以有效地预测和补偿3D打印过程中的转角误差，特别是尖锐转角导致的误差，从而显著提高打印质量。根据验证结果，模型的预测精度很高，平均预测误差仅为4.41mm，这表明系统具有很强的实用性。
+该系统可以有效地预测和补偿3D打印过程中的转角误差，特别是尖锐转角导致的误差，从而显著提高打印质量。根据验证结果，模型的预测精度很高，平均预测误差仅为4.41mm，使用模型进行校正后在真实数据上误差改善高达96.87%，在一致性仿真上误差减少32.24%，这表明系统具有很强的实用性。
 
 ## 结论
 
